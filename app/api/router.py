@@ -2,6 +2,10 @@ from fastapi import APIRouter
 
 api_router = APIRouter()
 
+@api_router.get("/health")
+def health_check() -> dict[str,str]:
+    return {"status": "ok","service":"ResumeIQ"}
+
 
 @api_router.post("/v1/resumes")
 def upload_resume():
