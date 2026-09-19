@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter,File,HTTPException,UploadFile
+from app.services.resume_extraction import extract_resume_text
 
 api_router = APIRouter()
 
@@ -8,8 +9,18 @@ def health_check() -> dict[str,str]:
 
 
 @api_router.post("/v1/resumes")
-def upload_resume():
-    return {"status": "not_implemented"}
+async def upload_resume(file: UploadFile=File(...)) -> dict[str,str]:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="The uploaded file must have a filename")
+    file_bytes = await file.read()
+
+    try:
+        extracted_text = extract_resume_text(filename=file.filename,file_bytes=file_bytes)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return {'filename':file.filename,'text':extracted_text}
+
 
 
 @api_router.post("/v1/job-descriptions")
