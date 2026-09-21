@@ -22,7 +22,6 @@ async def upload_resume(file: UploadFile=File(...)) -> dict[str,str]:
     return {'filename':file.filename,'text':extracted_text}
 
 
-
 @api_router.post("/v1/job-descriptions")
 def upload_job_description():
     return {"status": "not_implemented"}
