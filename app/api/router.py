@@ -1,6 +1,7 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.models.schemas import Resume
+from app.models.schemas import ATSScoreRequest, ATSScoreResult, Resume
+from app.services.ats_scoring import calculate_ats_score
 from app.services.resume_extraction import extract_resume_text
 from app.services.resume_parser import parse_resume_text
 
@@ -52,11 +53,9 @@ def upload_job_description() -> dict[str, str]:
     }
 
 
-@api_router.post("/v1/ats-score")
-def ats_score() -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-    }
+@api_router.post("/v1/ats-score", response_model=ATSScoreResult)
+def ats_score(request: ATSScoreRequest) -> ATSScoreResult:
+    return calculate_ats_score(request)
 
 
 @api_router.post("/v1/analysis/strengths-weaknesses")
