@@ -49,6 +49,9 @@ class JobDescription(BaseModel):
     preferred_skills: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
 
+class ATSScoreRequest(BaseModel):
+    resume: Resume
+    job_description: JobDescription | None = None
 
 class ScoreBreakdown(BaseModel):
     format_compliance: float
