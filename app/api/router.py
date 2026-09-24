@@ -1,16 +1,21 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.models.schemas import (
-    JobDescription,JobDescriptionRequest,ATSScoreResult,ATSScoreRequest,
     ATSScoreRequest,
+    ATSScoreResult,
+    JobDescription,
+    JobDescriptionRequest,
     Resume,
+    StrengthsWeaknessesRequest,
+    StrengthsWeaknessesResult,
 )
+from app.services.ats_scoring import calculate_ats_score
+from app.services.feedback_analyzer import analyze_strengths_weaknesses
 from app.services.job_description_parser import (
     parse_job_description_text,
 )
 from app.services.resume_extraction import extract_resume_text
 from app.services.resume_parser import parse_resume_text
-from app.services.ats_scoring import calculate_ats_score
 
 api_router = APIRouter()
 
@@ -71,11 +76,14 @@ def ats_score(request: ATSScoreRequest) -> ATSScoreResult:
     return calculate_ats_score(request)
 
 
-@api_router.post("/v1/analysis/strengths-weaknesses")
-def strengths_and_weaknesses() -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-    }
+@api_router.post(
+    "/v1/analysis/strengths-weaknesses",
+    response_model=StrengthsWeaknessesResult,
+)
+def strengths_and_weaknesses(
+    request: StrengthsWeaknessesRequest,
+) -> StrengthsWeaknessesResult:
+    return analyze_strengths_weaknesses(request)
 
 
 @api_router.post("/v1/resumes/tailor")

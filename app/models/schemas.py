@@ -51,7 +51,7 @@ class JobDescription(BaseModel):
 
 class JobDescriptionRequest(BaseModel):
     text: str
-    
+
 class ATSScoreRequest(BaseModel):
     resume: Resume
     job_description: JobDescription | None = None
@@ -83,6 +83,11 @@ class FeedbackItem(BaseModel):
     suggestion: str | None = None
 
 
+class StrengthsWeaknessesRequest(BaseModel):
+    resume: Resume
+    job_description: JobDescription | None = None
+
+    
 class StrengthsWeaknessesResult(BaseModel):
     strengths: list[FeedbackItem]
     weaknesses: list[FeedbackItem]
