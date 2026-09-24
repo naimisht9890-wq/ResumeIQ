@@ -1,10 +1,16 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.models.schemas import ATSScoreRequest, ATSScoreResult, Resume
-from app.services.ats_scoring import calculate_ats_score
+from app.models.schemas import (
+    JobDescription,JobDescriptionRequest,ATSScoreResult,ATSScoreRequest,
+    ATSScoreRequest,
+    Resume,
+)
+from app.services.job_description_parser import (
+    parse_job_description_text,
+)
 from app.services.resume_extraction import extract_resume_text
 from app.services.resume_parser import parse_resume_text
-
+from app.services.ats_scoring import calculate_ats_score
 
 api_router = APIRouter()
 
@@ -45,13 +51,20 @@ async def upload_resume(
 
     return resume
 
-
-@api_router.post("/v1/job-descriptions")
-def upload_job_description() -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-    }
-
+@api_router.post(
+    "/v1/job-descriptions",
+    response_model=JobDescription,
+)
+def upload_job_description(
+    request: JobDescriptionRequest,
+) -> JobDescription:
+    try:
+        return parse_job_description_text(request.text)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
 
 @api_router.post("/v1/ats-score", response_model=ATSScoreResult)
 def ats_score(request: ATSScoreRequest) -> ATSScoreResult:
