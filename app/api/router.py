@@ -10,7 +10,7 @@ from app.models.schemas import (
     StrengthsWeaknessesResult,
 )
 from app.services.ats_scoring import calculate_ats_score
-from app.services.feedback_analyzer import analyze_strengths_weaknesses
+from app.services.feedback_generator import (generate_grounded_feedback)
 from app.services.job_description_parser import (
     parse_job_description_text,
 )
@@ -83,8 +83,13 @@ def ats_score(request: ATSScoreRequest) -> ATSScoreResult:
 def strengths_and_weaknesses(
     request: StrengthsWeaknessesRequest,
 ) -> StrengthsWeaknessesResult:
-    return analyze_strengths_weaknesses(request)
-
+    try:
+        return generate_grounded_feedback(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        ) from error
 
 @api_router.post("/v1/resumes/tailor")
 def tailor_resume() -> dict[str, str]:

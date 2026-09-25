@@ -1,0 +1,44 @@
+[
+  {
+    "rule_id": "BP-CONTACT-001",
+    "category": "contact",
+    "text": "A resume should contain reliable contact information.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-SUMMARY-001",
+    "category": "summary",
+    "text": "A concise professional summary helps quickly explain the candidate's profile.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-BULLET-001",
+    "category": "experience",
+    "text": "Experience bullets should begin with action verbs and describe concrete contributions.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-METRIC-001",
+    "category": "quantification",
+    "text": "Strong achievement bullets include measurable outcomes such as percentages, time, revenue, scale, or volume.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-SKILL-001",
+    "category": "skills",
+    "text": "A clear skills section should contain technologies and competencies relevant to the target role.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-KEYWORD-001",
+    "category": "keywords",
+    "text": "A targeted resume should reflect important skills from the job description when they are genuinely supported.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-PROJECT-001",
+    "category": "projects",
+    "text": "Projects are useful evidence of practical ability, especially for students and early-career candidates.",
+    "source": "resume_best_practices"
+  }
+]

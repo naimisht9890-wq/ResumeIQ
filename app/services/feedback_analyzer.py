@@ -7,70 +7,18 @@ from app.models.schemas import (
     StrengthsWeaknessesRequest,
     StrengthsWeaknessesResult,
 )
+from app.services.knowledge_retriever import retrieve_rule
+
+from app.models.schemas import (
+    FeedbackItem,
+    JobDescription,
+    Resume,
+    StrengthsWeaknessesRequest,
+    StrengthsWeaknessesResult,
+)
 
 
-BEST_PRACTICE_RULES = [
-    {
-        "rule_id": "BP-CONTACT-001",
-        "category": "contact",
-        "text": "A resume should contain reliable contact information.",
-        "source": "resume_best_practices",
-    },
-    {
-        "rule_id": "BP-SUMMARY-001",
-        "category": "summary",
-        "text": (
-            "A concise professional summary helps quickly explain "
-            "the candidate's profile."
-        ),
-        "source": "resume_best_practices",
-    },
-    {
-        "rule_id": "BP-BULLET-001",
-        "category": "experience",
-        "text": (
-            "Experience bullets should begin with action verbs and "
-            "describe concrete contributions."
-        ),
-        "source": "resume_best_practices",
-    },
-    {
-        "rule_id": "BP-METRIC-001",
-        "category": "quantification",
-        "text": (
-            "Strong achievement bullets include measurable outcomes "
-            "such as percentages, time, revenue, scale, or volume."
-        ),
-        "source": "resume_best_practices",
-    },
-    {
-        "rule_id": "BP-SKILL-001",
-        "category": "skills",
-        "text": (
-            "A clear skills section should contain technologies and "
-            "competencies relevant to the target role."
-        ),
-        "source": "resume_best_practices",
-    },
-    {
-        "rule_id": "BP-KEYWORD-001",
-        "category": "keywords",
-        "text": (
-            "A targeted resume should reflect important skills from "
-            "the job description when they are genuinely supported."
-        ),
-        "source": "resume_best_practices",
-    },
-    {
-        "rule_id": "BP-PROJECT-001",
-        "category": "projects",
-        "text": (
-            "Projects are useful evidence of practical ability, "
-            "especially for students and early-career candidates."
-        ),
-        "source": "resume_best_practices",
-    },
-]
+
 
 
 NUMBER_PATTERN = re.compile(
@@ -338,34 +286,30 @@ def _feedback_from_rule(
     evidence: str | None = None,
     suggestion: str | None = None,
 ) -> FeedbackItem:
+    """
+    Create feedback using a retrieved best-practice rule.
+    """
+
     rule = _retrieve_rule(category)
+
+    grounded_suggestion = suggestion
+
+    if grounded_suggestion is None:
+        grounded_suggestion = rule["text"]
 
     return FeedbackItem(
         section=category,
         point=point,
         evidence=evidence,
-        suggestion=suggestion,
+        suggestion=grounded_suggestion,
     )
 
-
-def _retrieve_rule(category: str) -> dict[str, str]:
+def _retrieve_rule(category: str) -> dict:
     """
-    Retrieve the first curated best-practice rule for a category.
-
-    This is the first lightweight RAG step. The rule is currently
-    retrieved from an in-memory knowledge base.
+    Retrieve a curated rule from the external knowledge base.
     """
 
-    for rule in BEST_PRACTICE_RULES:
-        if rule["category"] == category:
-            return rule
-
-    return {
-        "rule_id": "BP-GENERAL-001",
-        "category": "general",
-        "text": "Use clear, relevant, evidence-based resume content.",
-        "source": "resume_best_practices",
-    }
+    return retrieve_rule(category)
 
 
 def _has_contact_information(resume: Resume) -> bool:
