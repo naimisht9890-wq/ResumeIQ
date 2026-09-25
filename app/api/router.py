@@ -1,10 +1,18 @@
+from io import BytesIO
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.models.schemas import (
     ATSScoreRequest,
     ATSScoreResult,
+    CoverLetterRequest,
+    CoverLetterResult,
+    CreateJobRequest,
     JobDescription,
     JobDescriptionRequest,
+    JobStatusResult,
+    RenderResumeRequest,
     Resume,
     SkillGapAnalysisRequest,
     SkillGapAnalysisResult,
@@ -14,6 +22,8 @@ from app.models.schemas import (
     TailorResumeResult,
 )
 from app.services.ats_scoring import calculate_ats_score
+from app.services.cover_letter_generator import generate_cover_letter
+from app.services.job_store import create_job, get_job
 from app.services.feedback_generator import (generate_grounded_feedback)
 from app.services.skill_gap_analysis import analyze_skill_gap
 from app.services.job_description_parser import (
@@ -21,6 +31,7 @@ from app.services.job_description_parser import (
 )
 from app.services.resume_extraction import extract_resume_text
 from app.services.resume_parser import parse_resume_text
+from app.services.resume_renderer import render_resume_docx
 from app.services.resume_tailoring import tailor_resume
 
 api_router = APIRouter()
@@ -122,22 +133,69 @@ def tailor_resume_endpoint(
 
 
 @api_router.post("/v1/resumes/render")
-def render_resume() -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-    }
+def render_resume(
+    request: RenderResumeRequest,
+) -> StreamingResponse:
+    document_bytes = render_resume_docx(request.resume)
+    filename = "resume.docx"
+
+    return StreamingResponse(
+        BytesIO(document_bytes),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            ),
+        },
+    )
 
 
-@api_router.post("/v1/cover-letters")
-def create_cover_letter() -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-    }
+@api_router.post(
+    "/v1/cover-letters",
+    response_model=CoverLetterResult,
+)
+def create_cover_letter(
+    request: CoverLetterRequest,
+) -> CoverLetterResult:
+    try:
+        return generate_cover_letter(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
 
 
-@api_router.get("/v1/jobs/{job_id}")
-def get_job(job_id: str) -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-        "job_id": job_id,
-    }
+@api_router.post(
+    "/v1/jobs",
+    response_model=JobStatusResult,
+)
+def create_background_job(
+    request: CreateJobRequest,
+) -> JobStatusResult:
+    try:
+        return create_job(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
+@api_router.get(
+    "/v1/jobs/{job_id}",
+    response_model=JobStatusResult,
+)
+def get_background_job(
+    job_id: str,
+) -> JobStatusResult:
+    try:
+        return get_job(job_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=str(error),
+        ) from error

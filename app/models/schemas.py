@@ -103,6 +103,32 @@ class TailorResumeResult(BaseModel):
     changes: list[TailoredChange] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
+
+class RenderResumeRequest(BaseModel):
+    resume: Resume
+
+    
+class CoverLetterRequest(BaseModel):
+    resume: Resume
+    job_description: JobDescription
+
+
+class CoverLetterResult(BaseModel):
+    draft: str
+    resume_facts_used: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CreateJobRequest(BaseModel):
+    operation: str
+
+
+class JobStatusResult(BaseModel):
+    job_id: str
+    operation: str
+    status: str
+    error: str | None = None
+
     
 class ATSScoreResult(BaseModel):
     overall: float
