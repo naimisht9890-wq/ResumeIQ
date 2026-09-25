@@ -6,11 +6,14 @@ from app.models.schemas import (
     JobDescription,
     JobDescriptionRequest,
     Resume,
+    SkillGapAnalysisRequest,
+    SkillGapAnalysisResult,
     StrengthsWeaknessesRequest,
     StrengthsWeaknessesResult,
 )
 from app.services.ats_scoring import calculate_ats_score
 from app.services.feedback_generator import (generate_grounded_feedback)
+from app.services.skill_gap_analysis import analyze_skill_gap
 from app.services.job_description_parser import (
     parse_job_description_text,
 )
@@ -75,6 +78,14 @@ def upload_job_description(
 def ats_score(request: ATSScoreRequest) -> ATSScoreResult:
     return calculate_ats_score(request)
 
+@api_router.post(
+    "/v1/analysis/skill-gap",
+    response_model=SkillGapAnalysisResult,
+)
+def skill_gap_analysis(
+    request: SkillGapAnalysisRequest,
+) -> SkillGapAnalysisResult:
+    return analyze_skill_gap(request)
 
 @api_router.post(
     "/v1/analysis/strengths-weaknesses",

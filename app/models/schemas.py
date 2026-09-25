@@ -56,6 +56,12 @@ class ATSScoreRequest(BaseModel):
     resume: Resume
     job_description: JobDescription | None = None
 
+class SkillGapAnalysisRequest(BaseModel):
+    resume: Resume
+    job_description: JobDescription
+
+
+
 class ScoreBreakdown(BaseModel):
     format_compliance: float
     section_completeness: float
@@ -69,7 +75,17 @@ class Citation(BaseModel):
     source: str
     note: str
 
+class SkillGapAnalysisResult(BaseModel):
+    matched_required_skills: list[str] = Field(default_factory=list)
+    missing_required_skills: list[str] = Field(default_factory=list)
+    matched_preferred_skills: list[str] = Field(default_factory=list)
+    missing_preferred_skills: list[str] = Field(default_factory=list)
+    required_match_rate: float
+    total_target_skills: int
+    matched_target_skills: int
+    citations: list[Citation] = Field(default_factory=list)
 
+    
 class ATSScoreResult(BaseModel):
     overall: float
     breakdown: ScoreBreakdown
