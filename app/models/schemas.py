@@ -61,6 +61,11 @@ class SkillGapAnalysisRequest(BaseModel):
     job_description: JobDescription
 
 
+class TailorResumeRequest(BaseModel):
+    resume: Resume
+    job_description: JobDescription
+
+
 
 class ScoreBreakdown(BaseModel):
     format_compliance: float
@@ -84,6 +89,19 @@ class SkillGapAnalysisResult(BaseModel):
     total_target_skills: int
     matched_target_skills: int
     citations: list[Citation] = Field(default_factory=list)
+
+
+class TailoredChange(BaseModel):
+    section: str
+    original_text: str
+    suggested_text: str
+    reason: str
+    supported_by_resume: bool
+
+
+class TailorResumeResult(BaseModel):
+    changes: list[TailoredChange] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
     
 class ATSScoreResult(BaseModel):

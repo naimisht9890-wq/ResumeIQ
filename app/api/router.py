@@ -10,6 +10,8 @@ from app.models.schemas import (
     SkillGapAnalysisResult,
     StrengthsWeaknessesRequest,
     StrengthsWeaknessesResult,
+    TailorResumeRequest,
+    TailorResumeResult,
 )
 from app.services.ats_scoring import calculate_ats_score
 from app.services.feedback_generator import (generate_grounded_feedback)
@@ -19,6 +21,7 @@ from app.services.job_description_parser import (
 )
 from app.services.resume_extraction import extract_resume_text
 from app.services.resume_parser import parse_resume_text
+from app.services.resume_tailoring import tailor_resume
 
 api_router = APIRouter()
 
@@ -102,11 +105,20 @@ def strengths_and_weaknesses(
             detail=str(error)
         ) from error
 
-@api_router.post("/v1/resumes/tailor")
-def tailor_resume() -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-    }
+@api_router.post(
+    "/v1/resumes/tailor",
+    response_model=TailorResumeResult,
+)
+def tailor_resume_endpoint(
+    request: TailorResumeRequest,
+) -> TailorResumeResult:
+    try:
+        return tailor_resume(request)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
 
 
 @api_router.post("/v1/resumes/render")

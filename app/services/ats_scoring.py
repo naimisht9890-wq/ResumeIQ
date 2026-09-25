@@ -1,5 +1,11 @@
 import re
-import unicodedata
+
+from app.services.skill_matching import (
+    contains_skill,
+    normalize_text,
+    resume_search_text,
+    unique_canonical_skills,
+)
 
 from app.models.schemas import (
     ATSScoreRequest,
@@ -11,31 +17,7 @@ from app.models.schemas import (
 
 
 FORMAT_RULES_SOURCE = "deterministic_ats_rules"
-SKILL_ALIASES = {
-    "nlp": "natural language processing",
-    "natural language processing": "natural language processing",
-    "sklearn": "scikit learn",
-    "scikit learn": "scikit learn",
-    "scikit-learn": "scikit learn",
-    "js": "javascript",
-    "javascript": "javascript",
-    "ts": "typescript",
-    "typescript": "typescript",
-    "py": "python",
-    "python": "python",
-    "postgres": "postgresql",
-    "postgresql": "postgresql",
-    "mongo": "mongodb",
-    "mongodb": "mongodb",
-    "k8s": "kubernetes",
-    "kubernetes": "kubernetes",
-    "aws": "amazon web services",
-    "amazon web services": "amazon web services",
-    "gcp": "google cloud platform",
-    "google cloud platform": "google cloud platform",
-    "azure": "microsoft azure",
-    "microsoft azure": "microsoft azure",
-}
+
 ACTION_VERBS = {
     "achieved", "automated", "built", "created", "decreased", "delivered",
     "designed", "developed", "drove", "enabled", "engineered", "generated",
@@ -206,8 +188,8 @@ def _score_keywords(
         )
         return score
 
-    required = _unique_canonical_skills(job_description.required_skills)
-    preferred = _unique_canonical_skills(job_description.preferred_skills)
+    required = unique_canonical_skills(job_description.required_skills)
+    preferred = unique_canonical_skills(job_description.preferred_skills)
     targets = required + [skill for skill in preferred if skill not in required]
     if not targets:
         citations.append(
@@ -219,11 +201,11 @@ def _score_keywords(
         )
         return 100.0
 
-    resume_text = _normalize_text(_resume_search_text(resume))
+    resume_text = normalize_text(resume_search_text(resume))
     matched = [
         skill
         for skill in targets
-        if _contains_skill(resume, resume_text, skill)
+        if contains_skill(resume, resume_text, skill)
     ]
     required_matched = [skill for skill in required if skill in matched]
     preferred_matched = [skill for skill in preferred if skill in matched]
@@ -387,83 +369,12 @@ def _is_student_or_entry_role(job_description) -> bool:
     )
 
 
-def _unique_canonical_skills(skills: list[str]) -> list[str]:
-    result: list[str] = []
-    for skill in skills:
-        canonical = _canonical_skill(skill)
-        if canonical and canonical not in result:
-            result.append(canonical)
-    return result
-
-
-def _canonical_skill(skill: str) -> str:
-    normalized = _normalize_text(skill)
-    return SKILL_ALIASES.get(normalized, normalized)
-
-
-def _resume_search_text(resume: Resume) -> str:
-    values: list[str] = [
-        _canonical_skill(skill)
-        for skill in resume.skills
-    ]
-    if resume.summary:
-        values.append(resume.summary)
-    for item in resume.experience:
-        values.extend(
-            value
-            for value in [item.title, item.company, *item.bullets]
-            if value
-        )
-    for project in resume.projects:
-        values.extend(
-            value
-            for value in [project.name, project.description, *project.bullets]
-            if value
-        )
-    return " ".join(values)
-
-
-def _contains_skill(
-    resume: Resume,
-    resume_text: str,
-    target: str,
-) -> bool:
-    if _contains_term(resume_text, target):
-        return True
-
-    aliases = [
-        alias
-        for alias, canonical in SKILL_ALIASES.items()
-        if canonical == target
-    ]
-    if any(_contains_term(resume_text, alias) for alias in aliases):
-        return True
-
-    return any(
-        _canonical_skill(skill) == target
-        for skill in resume.skills
-    )
-
-
-def _contains_term(text: str, term: str) -> bool:
-    return re.search(
-        rf"(?<!\w){re.escape(term)}(?!\w)",
-        text,
-    ) is not None
-
-
 def _contains_any_word(text: str, words: set[str]) -> bool:
     return bool(set(_words(text)) & {word.strip() for word in words})
 
 
 def _words(text: str) -> list[str]:
-    return WORD_PATTERN.findall(_normalize_text(text))
-
-
-def _normalize_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).lower()
-    normalized = normalized.replace("-", " ")
-    return " ".join(normalized.split())
+    return WORD_PATTERN.findall(normalize_text(text))
 
 
 def _all_bullets(resume: Resume) -> list[str]:

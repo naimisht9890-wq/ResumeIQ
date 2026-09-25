@@ -3,11 +3,11 @@ from app.models.schemas import (
     SkillGapAnalysisRequest,
     SkillGapAnalysisResult,
 )
-from app.services.ats_scoring import (
-    _canonical_skill,
-    _contains_skill,
-    _normalize_text,
-    _resume_search_text,
+from app.services.skill_matching import (
+    contains_skill,
+    normalize_text,
+    resume_search_text,
+    unique_canonical_skills,
 )
 
 
@@ -21,21 +21,21 @@ def analyze_skill_gap(
     resume = request.resume
     job_description = request.job_description
 
-    required = _unique_canonical_skills(
+    required = unique_canonical_skills(
         job_description.required_skills
     )
-    preferred = _unique_canonical_skills(
+    preferred = unique_canonical_skills(
         job_description.preferred_skills
     )
 
-    resume_text = _normalize_text(
-        _resume_search_text(resume)
+    resume_text = normalize_text(
+        resume_search_text(resume)
     )
 
     matched_required = [
         skill
         for skill in required
-        if _contains_skill(
+        if contains_skill(
             resume=resume,
             resume_text=resume_text,
             target=skill,
@@ -51,7 +51,7 @@ def analyze_skill_gap(
     matched_preferred = [
         skill
         for skill in preferred
-        if _contains_skill(
+        if contains_skill(
             resume=resume,
             resume_text=resume_text,
             target=skill,
@@ -121,20 +121,6 @@ def analyze_skill_gap(
         matched_target_skills=len(all_matched),
         citations=citations,
     )
-
-
-def _unique_canonical_skills(
-    skills: list[str],
-) -> list[str]:
-    result: list[str] = []
-
-    for skill in skills:
-        canonical = _canonical_skill(skill)
-
-        if canonical and canonical not in result:
-            result.append(canonical)
-
-    return result
 
 
 def _unique_items(items: list[str]) -> list[str]:
