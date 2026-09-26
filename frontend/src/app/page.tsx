@@ -21,6 +21,34 @@ type SkillGapResult = {
   required_match_rate: number;
 };
 
+type ResumeData = Record<string, unknown>;
+type JobData = Record<string, unknown>;
+type FeedbackItem = {
+  section: string;
+  point: string;
+  evidence: string | null;
+  suggestion: string | null;
+};
+type FeedbackResult = {
+  strengths: FeedbackItem[];
+  weaknesses: FeedbackItem[];
+};
+type TailorResult = {
+  changes: {
+    section: string;
+    original_text: string;
+    suggested_text: string;
+    reason: string;
+    supported_by_resume: boolean;
+  }[];
+  warnings: string[];
+};
+type CoverLetterResult = {
+  draft: string;
+  resume_facts_used: string[];
+  warnings: string[];
+};
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -29,7 +57,13 @@ export default function Home() {
   const [jobDescription, setJobDescription] = useState("");
   const [score, setScore] = useState<ScoreResult | null>(null);
   const [skillGap, setSkillGap] = useState<SkillGapResult | null>(null);
+  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  const [jobData, setJobData] = useState<JobData | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackResult | null>(null);
+  const [tailoring, setTailoring] = useState<TailorResult | null>(null);
+  const [coverLetter, setCoverLetter] = useState<CoverLetterResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeAction, setActiveAction] = useState("");
   const [error, setError] = useState("");
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -49,6 +83,11 @@ export default function Home() {
     setError("");
     setScore(null);
     setSkillGap(null);
+    setResumeData(null);
+    setJobData(null);
+    setFeedback(null);
+    setTailoring(null);
+    setCoverLetter(null);
 
     try {
       const resumeForm = new FormData();
@@ -67,6 +106,7 @@ export default function Home() {
       }
 
       const resume = await resumeResponse.json();
+      setResumeData(resume);
       const jobResponse = await fetch(
         `${API_BASE_URL}/v1/job-descriptions`,
         {
@@ -81,6 +121,7 @@ export default function Home() {
       }
 
       const structuredJob = await jobResponse.json();
+      setJobData(structuredJob);
       const [scoreResponse, gapResponse] = await Promise.all([
         fetch(`${API_BASE_URL}/v1/ats-score`, {
           method: "POST",
@@ -117,6 +158,105 @@ export default function Home() {
       );
     } finally {
       setIsAnalyzing(false);
+    }
+  }
+
+  async function requestJson<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response));
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  async function runOptionalAction(
+    action: "feedback" | "tailoring" | "cover-letter",
+  ) {
+    if (!resumeData || !jobData) {
+      setError("Analyze a resume and job description before continuing.");
+      return;
+    }
+
+    setActiveAction(action);
+    setError("");
+    try {
+      const payload = {
+        resume: resumeData,
+        job_description: jobData,
+      };
+
+      if (action === "feedback") {
+        setFeedback(
+          await requestJson<FeedbackResult>(
+            "/v1/analysis/strengths-weaknesses",
+            payload,
+          ),
+        );
+      } else if (action === "tailoring") {
+        setTailoring(
+          await requestJson<TailorResult>(
+            "/v1/resumes/tailor",
+            payload,
+          ),
+        );
+      } else {
+        setCoverLetter(
+          await requestJson<CoverLetterResult>(
+            "/v1/cover-letters",
+            payload,
+          ),
+        );
+      }
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The requested operation failed.",
+      );
+    } finally {
+      setActiveAction("");
+    }
+  }
+
+  async function downloadResume() {
+    if (!resumeData) {
+      setError("Analyze a resume before downloading it.");
+      return;
+    }
+
+    setActiveAction("download");
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/resumes/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume: resumeData }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await getErrorMessage(response));
+      }
+
+      const fileUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = "resume.docx";
+      link.click();
+      URL.revokeObjectURL(fileUrl);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The resume download failed.",
+      );
+    } finally {
+      setActiveAction("");
     }
   }
 
@@ -265,6 +405,127 @@ export default function Home() {
             )}
           </div>
 
+          {score && skillGap && (
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="font-semibold">Next steps</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Generate each AI result only when you choose it.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <ActionButton
+                  onClick={() => runOptionalAction("feedback")}
+                  disabled={Boolean(activeAction)}
+                  busy={activeAction === "feedback"}
+                >
+                  Strengths &amp; weaknesses
+                </ActionButton>
+                <ActionButton
+                  onClick={() => runOptionalAction("tailoring")}
+                  disabled={Boolean(activeAction)}
+                  busy={activeAction === "tailoring"}
+                >
+                  Review tailoring suggestions
+                </ActionButton>
+                <ActionButton
+                  onClick={() => runOptionalAction("cover-letter")}
+                  disabled={Boolean(activeAction)}
+                  busy={activeAction === "cover-letter"}
+                >
+                  Generate cover letter
+                </ActionButton>
+                <ActionButton
+                  onClick={downloadResume}
+                  disabled={Boolean(activeAction)}
+                  busy={activeAction === "download"}
+                >
+                  Download resume DOCX
+                </ActionButton>
+              </div>
+            </div>
+          )}
+
+          {feedback && (
+            <FeedbackPanel title="Strengths" items={feedback.strengths} />
+          )}
+          {feedback && (
+            <FeedbackPanel title="Areas to improve" items={feedback.weaknesses} />
+          )}
+
+          {tailoring && (
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="font-semibold">Review suggested changes</h2>
+              {tailoring.warnings.map((warning) => (
+                <p
+                  key={warning}
+                  className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
+                >
+                  {warning}
+                </p>
+              ))}
+              <div className="mt-4 space-y-4">
+                {tailoring.changes.map((change, index) => (
+                  <article
+                    key={`${change.section}-${index}`}
+                    className="rounded-2xl border border-slate-200 p-4"
+                  >
+                    <p className="text-xs font-semibold uppercase text-indigo-700">
+                      {change.section}
+                      {change.supported_by_resume
+                        ? " · Supported by resume"
+                        : " · Review carefully"}
+                    </p>
+                    <p className="mt-3 text-sm text-slate-500">
+                      Original: {change.original_text}
+                    </p>
+                    <p className="mt-2 text-sm font-medium">
+                      Suggested: {change.suggested_text}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {change.reason}
+                    </p>
+                  </article>
+                ))}
+                {tailoring.changes.length === 0 && (
+                  <p className="text-sm text-slate-500">
+                    No text changes were suggested. Check the warnings above.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {coverLetter && (
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="font-semibold">Cover letter draft</h2>
+              {coverLetter.warnings.map((warning) => (
+                <p
+                  key={warning}
+                  className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
+                >
+                  {warning}
+                </p>
+              ))}
+              <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                {coverLetter.draft}
+              </p>
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="text-xs font-semibold text-slate-500">
+                  Resume facts referenced
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {coverLetter.resume_facts_used.map((fact) => (
+                    <span
+                      key={fact}
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600"
+                    >
+                      {fact}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {!score && !skillGap && (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-white/60 p-8 text-center">
               <p className="text-4xl">✦</p>
@@ -278,6 +539,69 @@ export default function Home() {
         </section>
       </div>
     </main>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  disabled,
+  busy,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled: boolean;
+  busy: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium transition hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {busy ? "Working..." : children}
+    </button>
+  );
+}
+
+function FeedbackPanel({
+  title,
+  items,
+}: {
+  title: string;
+  items: FeedbackItem[];
+}) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="font-semibold">{title}</h2>
+      <div className="mt-4 space-y-3">
+        {items.map((item, index) => (
+          <article
+            key={`${item.section}-${index}`}
+            className="rounded-2xl bg-slate-50 p-4"
+          >
+            <p className="text-xs font-semibold uppercase text-indigo-700">
+              {item.section}
+            </p>
+            <p className="mt-1 text-sm font-medium">{item.point}</p>
+            {item.evidence && (
+              <p className="mt-2 text-sm text-slate-500">
+                Evidence: {item.evidence}
+              </p>
+            )}
+            {item.suggestion && (
+              <p className="mt-2 text-sm text-slate-700">
+                {item.suggestion}
+              </p>
+            )}
+          </article>
+        ))}
+        {items.length === 0 && (
+          <p className="text-sm text-slate-500">No findings returned.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
