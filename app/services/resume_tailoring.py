@@ -8,7 +8,10 @@ from app.models.schemas import (
     TailorResumeRequest,
     TailorResumeResult,
 )
-from app.services.knowledge_retriever import retrieve_rule
+from app.services.knowledge_retriever import (
+    citations_for_context,
+    retrieve_context,
+)
 from app.services.skill_gap_analysis import analyze_skill_gap
 
 
@@ -20,11 +23,25 @@ def tailor_resume(
     """
 
     skill_gap = analyze_skill_gap(request)
-    rules = [
-        retrieve_rule("keywords"),
-        retrieve_rule("experience"),
-        retrieve_rule("quantification"),
-    ]
+    query = " ".join(
+        [
+            request.job_description.raw_text,
+            *request.job_description.required_skills,
+            *request.job_description.preferred_skills,
+            request.resume.summary or "",
+            *request.resume.skills,
+            *(
+                bullet
+                for item in request.resume.experience
+                for bullet in item.bullets
+            ),
+        ]
+    )
+    rules = retrieve_context(
+        query,
+        ["keywords", "experience", "quantification"],
+        top_k=5,
+    )
 
     api_key = os.getenv("GROQ_API_KEY")
 
@@ -97,6 +114,7 @@ def tailor_resume(
         result,
         request,
     )
+    result.citations = citations_for_context(rules)
     return result
 
 

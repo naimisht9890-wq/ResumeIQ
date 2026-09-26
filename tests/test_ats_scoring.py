@@ -1,4 +1,7 @@
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from app.models.schemas import (
     ATSScoreRequest,
@@ -12,6 +15,21 @@ from app.services.ats_scoring import calculate_ats_score
 
 
 class ATSScoringTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_directory.cleanup)
+        self.database_environment = patch.dict(
+            os.environ,
+            {
+                "RESUMEIQ_DATABASE_PATH": os.path.join(
+                    self.temp_directory.name,
+                    "ats.sqlite3",
+                )
+            },
+        )
+        self.database_environment.start()
+        self.addCleanup(self.database_environment.stop)
+
     def test_skill_aliases_match_without_substring_false_positives(self) -> None:
         resume = Resume(
             contact=ContactInfo(name="Alex Doe"),
@@ -177,6 +195,39 @@ class ATSScoringTests(unittest.TestCase):
                 for citation in first.citations
             )
         )
+
+    def test_score_cites_retrieved_guidance_without_changing_score(self) -> None:
+        request = ATSScoreRequest(
+            resume=Resume(
+                skills=["Python"],
+                experience=[
+                    ExperienceItem(
+                        bullets=["Reduced processing time by 20%."]
+                    )
+                ],
+            ),
+            job_description=JobDescription(
+                raw_text="Backend Python role.",
+                required_skills=["Python"],
+            ),
+        )
+
+        first = calculate_ats_score(request)
+        second = calculate_ats_score(request)
+
+        retrieved_citations = [
+            citation
+            for citation in first.citations
+            if "Related guidance only" in citation.note
+        ]
+        self.assertGreater(len(retrieved_citations), 0)
+        self.assertTrue(
+            all(
+                citation.source in {"ats_behavior", "resume_best_practices"}
+                for citation in retrieved_citations
+            )
+        )
+        self.assertEqual(first.overall, second.overall)
 
 
 if __name__ == "__main__":

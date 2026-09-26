@@ -6,3 +6,4 @@ python-multipart
 PyMUPDF
 python-docx
 groq
+httpx

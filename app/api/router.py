@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import (
@@ -172,6 +172,7 @@ def create_cover_letter(
 @api_router.post(
     "/v1/jobs",
     response_model=JobStatusResult,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_background_job(
     request: CreateJobRequest,

@@ -46,5 +46,95 @@
     "category": "projects",
     "text": "Projects are useful evidence of practical ability, especially for students and early-career candidates.",
     "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-CONTACT-002",
+    "category": "contact",
+    "text": "Use a professional email address and include a working phone number or portfolio link when relevant to the role.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-SUMMARY-002",
+    "category": "summary",
+    "text": "Tailor the opening summary to the target position by emphasizing relevant experience and skills already supported elsewhere in the resume.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-BULLET-002",
+    "category": "experience",
+    "text": "Lead each experience bullet with a precise action verb and explain the scope, method, or outcome of the work.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-BULLET-003",
+    "category": "experience",
+    "text": "Prefer concise accomplishment statements over generic duty lists; preserve the candidate's original facts when editing.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-METRIC-002",
+    "category": "quantification",
+    "text": "When accurate figures are available, quantify results with percentages, time saved, scale, volume, quality, or cost; never invent metrics.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-SKILL-002",
+    "category": "skills",
+    "text": "Group technical tools and role-relevant competencies into a concise skills section and remove unsupported or irrelevant claims.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-KEYWORD-002",
+    "category": "keywords",
+    "text": "Use the job description's exact terminology where it accurately describes existing experience; do not add a keyword as a claimed skill without evidence.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-KEYWORD-003",
+    "category": "keywords",
+    "text": "Prioritize required qualifications and recurring role-specific terms over copying every phrase from a job posting.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-COVER-002",
+    "category": "cover_letter",
+    "text": "Open with the target role and a specific reason grounded in the candidate's documented experience, then connect one or two relevant achievements to the employer's needs.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-COVER-003",
+    "category": "cover_letter",
+    "text": "Keep a cover letter concise, professional, and specific; avoid generic claims, unsupported motivation, and repeating the full resume.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-PROJECT-002",
+    "category": "projects",
+    "text": "Describe a relevant project with its purpose, the candidate's contribution, and the technologies or outcomes explicitly stated in the source.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-FORMAT-001",
+    "category": "formatting",
+    "text": "Use a simple, consistent, single-column layout with clear section headings and standard text to improve machine parsing.",
+    "source": "ats_behavior"
+  },
+  {
+    "rule_id": "BP-FORMAT-002",
+    "category": "formatting",
+    "text": "Avoid placing essential contact details in headers, footers, text boxes, images, or complex tables because some applicant tracking systems may not extract them reliably.",
+    "source": "ats_behavior"
+  },
+  {
+    "rule_id": "BP-READABILITY-001",
+    "category": "readability",
+    "text": "Keep bullets focused and scannable, use consistent tense and punctuation, and remove redundant wording.",
+    "source": "resume_best_practices"
+  },
+  {
+    "rule_id": "BP-SECTION-001",
+    "category": "section_completeness",
+    "text": "Use conventional labels for sections such as Experience, Education, Skills, and Projects so resume parsers and readers can identify them.",
+    "source": "ats_behavior"
   }
 ]

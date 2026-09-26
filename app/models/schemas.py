@@ -1,3 +1,5 @@
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -102,6 +104,7 @@ class TailoredChange(BaseModel):
 class TailorResumeResult(BaseModel):
     changes: list[TailoredChange] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class RenderResumeRequest(BaseModel):
@@ -117,17 +120,29 @@ class CoverLetterResult(BaseModel):
     draft: str
     resume_facts_used: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class CreateJobRequest(BaseModel):
     operation: str
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobStatusResult(BaseModel):
     job_id: str
     operation: str
-    status: str
+    status: Literal["queued", "running", "completed", "failed"]
     error: str | None = None
+    result: dict[str, Any] | None = None
+
+
+class ResumeParsingJobPayload(BaseModel):
+    filename: str
+    content_base64: str
+
+
+class JobDescriptionParsingJobPayload(BaseModel):
+    text: str
 
     
 class ATSScoreResult(BaseModel):
@@ -151,3 +166,4 @@ class StrengthsWeaknessesRequest(BaseModel):
 class StrengthsWeaknessesResult(BaseModel):
     strengths: list[FeedbackItem]
     weaknesses: list[FeedbackItem]
+    citations: list[Citation] = Field(default_factory=list)

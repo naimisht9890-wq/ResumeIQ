@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useState } from "react";
 
 type ScoreResult = {
   overall: number;
@@ -11,6 +11,11 @@ type ScoreResult = {
     quantification: number;
     readability: number;
   };
+  citations: {
+    rule_id: string;
+    source: string;
+    note: string;
+  }[];
 };
 
 type SkillGapResult = {
@@ -21,7 +26,37 @@ type SkillGapResult = {
   required_match_rate: number;
 };
 
-type ResumeData = Record<string, unknown>;
+type ResumeData = {
+  contact: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    location?: string | null;
+    linkedin?: string | null;
+  };
+  summary: string | null;
+  experience: {
+    title: string | null;
+    company: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    bullets: string[];
+  }[];
+  education: {
+    degree: string | null;
+    school: string | null;
+    start_date: string | null;
+    end_date: string | null;
+  }[];
+  skills: string[];
+  projects: {
+    name: string | null;
+    description: string | null;
+    bullets: string[];
+  }[];
+  certifications: string[];
+  red_flags: string[];
+};
 type JobData = Record<string, unknown>;
 type FeedbackItem = {
   section: string;
@@ -29,24 +64,41 @@ type FeedbackItem = {
   evidence: string | null;
   suggestion: string | null;
 };
+type CitationItem = {
+  rule_id: string;
+  source: string;
+  note: string;
+};
 type FeedbackResult = {
   strengths: FeedbackItem[];
   weaknesses: FeedbackItem[];
+  citations: CitationItem[];
 };
 type TailorResult = {
-  changes: {
-    section: string;
-    original_text: string;
-    suggested_text: string;
-    reason: string;
-    supported_by_resume: boolean;
-  }[];
+  changes: TailoredChange[];
   warnings: string[];
+  citations: CitationItem[];
 };
+type TailoredChange = {
+  section: string;
+  original_text: string;
+  suggested_text: string;
+  reason: string;
+  supported_by_resume: boolean;
+};
+type ChangeDecision = "pending" | "accepted" | "rejected";
 type CoverLetterResult = {
   draft: string;
   resume_facts_used: string[];
   warnings: string[];
+  citations: CitationItem[];
+};
+type JobStatusResult = {
+  job_id: string;
+  operation: string;
+  status: "queued" | "running" | "completed" | "failed";
+  error: string | null;
+  result: unknown;
 };
 
 const API_BASE_URL =
@@ -54,6 +106,7 @@ const API_BASE_URL =
 
 export default function Home() {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [jobDescription, setJobDescription] = useState("");
   const [score, setScore] = useState<ScoreResult | null>(null);
   const [skillGap, setSkillGap] = useState<SkillGapResult | null>(null);
@@ -61,6 +114,9 @@ export default function Home() {
   const [jobData, setJobData] = useState<JobData | null>(null);
   const [feedback, setFeedback] = useState<FeedbackResult | null>(null);
   const [tailoring, setTailoring] = useState<TailorResult | null>(null);
+  const [changeDecisions, setChangeDecisions] = useState<
+    Record<number, ChangeDecision>
+  >({});
   const [coverLetter, setCoverLetter] = useState<CoverLetterResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeAction, setActiveAction] = useState("");
@@ -68,6 +124,13 @@ export default function Home() {
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setResumeFile(event.target.files?.[0] ?? null);
+    setError("");
+  }
+
+  function handleFileDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    setResumeFile(event.dataTransfer.files[0] ?? null);
     setError("");
   }
 
@@ -87,69 +150,32 @@ export default function Home() {
     setJobData(null);
     setFeedback(null);
     setTailoring(null);
+    setChangeDecisions({});
     setCoverLetter(null);
 
     try {
-      const resumeForm = new FormData();
-      resumeForm.append("file", resumeFile);
-
-      const resumeResponse = await fetch(
-        `${API_BASE_URL}/v1/resumes`,
-        {
-          method: "POST",
-          body: resumeForm,
-        },
-      );
-
-      if (!resumeResponse.ok) {
-        throw new Error(await getErrorMessage(resumeResponse));
-      }
-
-      const resume = await resumeResponse.json();
-      setResumeData(resume);
-      const jobResponse = await fetch(
-        `${API_BASE_URL}/v1/job-descriptions`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: jobDescription }),
-        },
-      );
-
-      if (!jobResponse.ok) {
-        throw new Error(await getErrorMessage(jobResponse));
-      }
-
-      const structuredJob = await jobResponse.json();
-      setJobData(structuredJob);
-      const [scoreResponse, gapResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/v1/ats-score`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resume,
-            job_description: structuredJob,
-          }),
+      const [resume, structuredJob] = await Promise.all([
+        runJob<ResumeData>("resume_parsing", {
+          filename: resumeFile.name,
+          content_base64: await fileToBase64(resumeFile),
         }),
-        fetch(`${API_BASE_URL}/v1/analysis/skill-gap`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resume,
-            job_description: structuredJob,
-          }),
+        runJob<JobData>("job_description_parsing", {
+          text: jobDescription,
         }),
       ]);
+      setResumeData(resume);
+      setJobData(structuredJob);
+      const analysisPayload = {
+        resume,
+        job_description: structuredJob,
+      };
+      const [scoreResult, skillGapResult] = await Promise.all([
+        runJob<ScoreResult>("ats_scoring", analysisPayload),
+        runJob<SkillGapResult>("skill_gap_analysis", analysisPayload),
+      ]);
 
-      if (!scoreResponse.ok) {
-        throw new Error(await getErrorMessage(scoreResponse));
-      }
-      if (!gapResponse.ok) {
-        throw new Error(await getErrorMessage(gapResponse));
-      }
-
-      setScore(await scoreResponse.json());
-      setSkillGap(await gapResponse.json());
+      setScore(scoreResult);
+      setSkillGap(skillGapResult);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -161,18 +187,39 @@ export default function Home() {
     }
   }
 
-  async function requestJson<T>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+  async function runJob<T>(operation: string, payload: unknown): Promise<T> {
+    const jobResponse = await fetch(`${API_BASE_URL}/v1/jobs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ operation, payload }),
     });
 
-    if (!response.ok) {
-      throw new Error(await getErrorMessage(response));
+    if (!jobResponse.ok) {
+      throw new Error(await getErrorMessage(jobResponse));
     }
 
-    return response.json() as Promise<T>;
+    let job = (await jobResponse.json()) as JobStatusResult;
+    while (job.status === "queued" || job.status === "running") {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const statusResponse = await fetch(
+        `${API_BASE_URL}/v1/jobs/${encodeURIComponent(job.job_id)}`,
+      );
+
+      if (!statusResponse.ok) {
+        throw new Error(await getErrorMessage(statusResponse));
+      }
+
+      job = (await statusResponse.json()) as JobStatusResult;
+    }
+
+    if (job.status === "failed") {
+      throw new Error(job.error ?? `The ${operation} job failed.`);
+    }
+    if (job.result === null || typeof job.result !== "object") {
+      throw new Error(`The ${operation} job completed without a result.`);
+    }
+
+    return job.result as T;
   }
 
   async function runOptionalAction(
@@ -193,24 +240,15 @@ export default function Home() {
 
       if (action === "feedback") {
         setFeedback(
-          await requestJson<FeedbackResult>(
-            "/v1/analysis/strengths-weaknesses",
-            payload,
-          ),
+          await runJob<FeedbackResult>("strengths_weaknesses", payload),
         );
       } else if (action === "tailoring") {
-        setTailoring(
-          await requestJson<TailorResult>(
-            "/v1/resumes/tailor",
-            payload,
-          ),
-        );
+        const result = await runJob<TailorResult>("tailoring", payload);
+        setTailoring(result);
+        setChangeDecisions({});
       } else {
         setCoverLetter(
-          await requestJson<CoverLetterResult>(
-            "/v1/cover-letters",
-            payload,
-          ),
+          await runJob<CoverLetterResult>("cover_letter", payload),
         );
       }
     } catch (requestError) {
@@ -233,10 +271,18 @@ export default function Home() {
     setActiveAction("download");
     setError("");
     try {
+      const acceptedChanges =
+        tailoring?.changes.filter(
+          (_, index) => changeDecisions[index] === "accepted",
+        ) ?? [];
+      const resumeForDownload = applyAcceptedChanges(
+        resumeData,
+        acceptedChanges,
+      );
       const response = await fetch(`${API_BASE_URL}/v1/resumes/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume: resumeData }),
+        body: JSON.stringify({ resume: resumeForDownload }),
       });
 
       if (!response.ok) {
@@ -246,9 +292,11 @@ export default function Home() {
       const fileUrl = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = fileUrl;
-      link.download = "resume.docx";
+      link.download = acceptedChanges.length
+        ? "tailored_resume.docx"
+        : "resume.docx";
       link.click();
-      URL.revokeObjectURL(fileUrl);
+      window.setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -261,50 +309,117 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f7fb] text-slate-950">
-      <nav className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-xl bg-indigo-600 font-bold text-white">
-              R
-            </div>
-            <span className="text-lg font-semibold tracking-tight">
-              ResumeIQ
+    <main className="dashboard min-h-screen">
+      <nav className="topbar">
+        <div className="topbar-inner">
+          <a className="brand" href="#top" aria-label="ResumeIQ home">
+            <span className="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M7 3.75h7l4.25 4.3v12.2H7a2 2 0 0 1-2-2v-12.5a2 2 0 0 1 2-2Z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M14 4v4.5h4.25M8.5 12h7M8.5 15.5h5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </span>
+            <span>Resume<span className="brand-accent">IQ</span></span>
+          </a>
+          <div className="topbar-links">
+            <a href="#analysis">Workspace</a>
+            <a href="#insights">Insights</a>
           </div>
-          <span className="hidden rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 sm:block">
-            AI-powered resume intelligence
+          <span className="topbar-status">
+            <span className="status-dot" />
+            AI resume intelligence
           </span>
         </div>
       </nav>
 
-      <div className="mx-auto grid max-w-6xl gap-8 px-5 py-10 lg:grid-cols-[0.9fr_1.1fr]">
-        <section>
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">
-            Resume analysis workspace
-          </p>
-          <h1 className="max-w-xl text-4xl font-semibold tracking-tight sm:text-5xl">
-            Turn your resume into a stronger application.
-          </h1>
-          <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-            Upload your resume and add a target job description to receive a
-            transparent ATS score, skill gaps, and evidence-based insights.
-          </p>
+      <div id="top" className="page-content">
+        <section className="hero">
+          <div className="hero-copy">
+            <p className="eyebrow">
+              <span className="eyebrow-sparkle">✳</span>
+              Your next role starts here
+            </p>
+            <h1 className="hero-title">
+              Make your resume
+              <br />
+              <span>work smarter.</span>
+            </h1>
+            <p className="hero-description">
+              Get a clearer picture of how your experience aligns with the
+              role. Practical, explainable insights to help you apply with
+              confidence.
+            </p>
+            <div className="hero-points">
+              <span><i className="point-check">✓</i> Transparent ATS scoring</span>
+              <span><i className="point-check">✓</i> Resume-grounded guidance</span>
+            </div>
+          </div>
+          <div className="hero-note">
+            <span className="hero-note-icon" aria-hidden="true">✦</span>
+            <div>
+              <strong>Built for better applications</strong>
+              <p>One workspace for your resume and the role you want.</p>
+            </div>
+          </div>
+        </section>
+
+        <div className="workspace-grid">
+          <section id="analysis" className="workspace-panel">
+            <div className="section-heading">
+              <span className="section-index">01</span>
+              <div>
+                <p className="section-kicker">Start with the essentials</p>
+                <h2>Set up your analysis</h2>
+              </div>
+            </div>
 
           <form
             onSubmit={analyzeResume}
-            className="mt-8 space-y-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"
+            className="glass-card upload-form"
           >
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold">
-                Resume file
+            <label className="field-label">
+              <span className="field-heading">
+                <span className="field-number">1</span>
+                Upload your resume
               </span>
-              <span className="flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-indigo-300 bg-indigo-50/50 px-4 py-4 text-sm text-slate-600 transition hover:border-indigo-500 hover:bg-indigo-50">
-                <span>
-                  {resumeFile ? resumeFile.name : "Choose PDF, DOCX, or TXT"}
+              <span
+                className={`upload-dropzone${isDragging ? " is-dragging" : ""}${resumeFile ? " has-file" : ""}`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setIsDragging(false);
+                  }
+                }}
+                onDrop={handleFileDrop}
+              >
+                <span className="upload-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15.5v3A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-3"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </span>
-                <span className="rounded-lg bg-white px-3 py-2 font-medium text-indigo-700 shadow-sm">
-                  Browse
+                <span>
+                  <strong>{resumeFile ? resumeFile.name : "Drop your resume here"}</strong>
+                  <small>{resumeFile ? "Ready to analyze" : "or click to browse · PDF, DOCX, or TXT"}</small>
                 </span>
                 <input
                   type="file"
@@ -315,103 +430,181 @@ export default function Home() {
               </span>
             </label>
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold">
-                Target job description
+            <label className="field-label">
+              <span className="field-heading">
+                <span className="field-number">2</span>
+                Add the target job description
               </span>
               <textarea
                 value={jobDescription}
                 onChange={(event) => setJobDescription(event.target.value)}
-                placeholder="Paste the job description here..."
-                rows={9}
-                className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                placeholder="Paste the job description to compare its requirements with your experience..."
+                rows={7}
+                className="job-description-input"
               />
+              <span className="field-hint">
+                Include the full description for the most relevant skill-match insights.
+              </span>
             </label>
 
             {error && (
-              <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <p role="alert" className="error-message">
                 {error}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={isAnalyzing}
-              className="w-full rounded-2xl bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isAnalyzing || !resumeFile || !jobDescription.trim()}
+              className="primary-button"
             >
-              {isAnalyzing ? "Analyzing your resume..." : "Analyze resume"}
+              {isAnalyzing ? (
+                <>
+                  <span className="loading-spinner" aria-hidden="true" />
+                  Analyzing your resume
+                </>
+              ) : (
+                <>
+                  Analyze my resume
+                  <span aria-hidden="true">→</span>
+                </>
+              )}
             </button>
+            <p className="privacy-note">
+              Resume text is processed for your analysis and AI-generated suggestions.
+            </p>
           </form>
         </section>
 
-        <section className="space-y-5">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
+        <section id="insights" className="insights-column">
+          <div className="section-heading insights-heading">
+            <span className="section-index">02</span>
+            <div>
+              <p className="section-kicker">A clearer view of your fit</p>
+              <h2>Your resume insights</h2>
+            </div>
+          </div>
+
+          <div className="glass-card score-card">
+            <div className="score-card-heading">
               <div>
-                <p className="text-sm font-medium text-slate-500">
-                  Overall ATS score
-                </p>
-                <p className="mt-1 text-3xl font-semibold">
-                  {score ? `${score.overall}/100` : "--"}
-                </p>
+                <p className="card-eyebrow">Resume overview</p>
+                <h3>ATS compatibility</h3>
               </div>
-              <div className="grid size-16 place-items-center rounded-full bg-indigo-50 text-xl font-semibold text-indigo-700">
-                {score ? Math.round(score.overall) : "--"}
+              {score && <span className="complete-badge"><span /> Analysis complete</span>}
+            </div>
+            <div className="score-overview">
+              <div
+                className="score-gauge"
+                style={{
+                  background: `conic-gradient(#65e0c0 ${score ? score.overall : 0}%, #253448 0)`,
+                }}
+              >
+                <div className="score-gauge-inner">
+                  <strong>{score ? Math.round(score.overall) : "--"}</strong>
+                  <span>out of 100</span>
+                </div>
+              </div>
+              <div className="score-summary">
+                <p className="score-label">
+                  {score ? "Your current score" : "Your score will appear here"}
+                </p>
+                <p>
+                  {score
+                    ? "A snapshot of how well your resume aligns with common ATS checks and this role."
+                    : "Upload your resume and add a job description to see your compatibility breakdown."}
+                </p>
               </div>
             </div>
             {score && (
-              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="score-breakdown">
                 {Object.entries(score.breakdown).map(([label, value]) => (
-                  <div key={label} className="rounded-2xl bg-slate-50 p-3">
-                    <p className="text-xs capitalize text-slate-500">
-                      {label.replaceAll("_", " ")}
-                    </p>
-                    <p className="mt-1 font-semibold">{value}</p>
+                  <div key={label} className="score-metric">
+                    <p>{label.replaceAll("_", " ")}</p>
+                    <div className="metric-track">
+                      <span
+                        style={{
+                          width: `${Math.max(0, Math.min(100, value))}%`,
+                        }}
+                      />
+                    </div>
+                    <strong>{Math.round(value)}<small>/100</small></strong>
                   </div>
                 ))}
               </div>
             )}
+            {score && (
+              <details className="score-citations">
+                <summary>How this score is calculated</summary>
+                <div>
+                  {score.citations.map((citation) => (
+                    <p key={citation.rule_id}>
+                      <strong>{citation.rule_id.replaceAll("_", " ")}</strong>
+                      <span>{citation.note}</span>
+                    </p>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-sm font-medium text-slate-500">
-              Job skill alignment
-            </p>
-            <p className="mt-1 text-3xl font-semibold">
-              {skillGap ? `${skillGap.required_match_rate}%` : "--"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              Required skills matched
-            </p>
+          <div className="glass-card skill-card">
+            <div className="skill-card-heading">
+              <div>
+                <p className="card-eyebrow">Role alignment</p>
+                <h3>Skill gap analysis</h3>
+              </div>
+              <div className="match-rate">
+                <strong>{skillGap ? `${Math.round(skillGap.required_match_rate)}%` : "--"}</strong>
+                <span>required match</span>
+              </div>
+            </div>
+            {skillGap && (
+              <div className="skill-progress">
+                <span
+                  style={{
+                    width: `${Math.max(0, Math.min(100, skillGap.required_match_rate))}%`,
+                  }}
+                />
+              </div>
+            )}
 
             {skillGap && (
-              <div className="mt-6 space-y-5">
+              <div className="skill-lists">
                 <SkillList
-                  title="Matched skills"
+                  title="Skills found in your resume"
                   skills={skillGap.matched_required_skills}
                   color="emerald"
                 />
                 <SkillList
-                  title="Missing required skills"
+                  title="Required skills to address"
                   skills={skillGap.missing_required_skills}
                   color="rose"
                 />
                 <SkillList
-                  title="Missing preferred skills"
+                  title="Preferred skills to address"
                   skills={skillGap.missing_preferred_skills}
                   color="amber"
                 />
               </div>
             )}
+            {!skillGap && (
+              <p className="insight-placeholder">
+                Add a target role to see matched and missing skills side by side.
+              </p>
+            )}
           </div>
 
           {score && skillGap && (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <p className="font-semibold">Next steps</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Generate each AI result only when you choose it.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="glass-card actions-card">
+              <div>
+                <p className="card-eyebrow">Keep improving</p>
+                <h3>Go beyond the score</h3>
+                <p className="actions-description">
+                  Choose an insight to generate from your resume and this job description.
+                </p>
+              </div>
+              <div className="action-grid">
                 <ActionButton
                   onClick={() => runOptionalAction("feedback")}
                   disabled={Boolean(activeAction)}
@@ -438,108 +631,179 @@ export default function Home() {
                   disabled={Boolean(activeAction)}
                   busy={activeAction === "download"}
                 >
-                  Download resume DOCX
+                  {acceptedChangeCount(tailoring, changeDecisions) > 0
+                    ? `Download tailored DOCX (${acceptedChangeCount(tailoring, changeDecisions)} accepted)`
+                    : "Download resume DOCX"}
                 </ActionButton>
               </div>
             </div>
           )}
 
           {feedback && (
-            <FeedbackPanel title="Strengths" items={feedback.strengths} />
+            <FeedbackPanel
+              title="Strengths"
+              items={feedback.strengths}
+              citations={feedback.citations}
+            />
           )}
           {feedback && (
-            <FeedbackPanel title="Areas to improve" items={feedback.weaknesses} />
+            <FeedbackPanel
+              title="Areas to improve"
+              items={feedback.weaknesses}
+            />
           )}
 
           {tailoring && (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="font-semibold">Review suggested changes</h2>
+            <div className="glass-card result-card">
+              <div className="result-card-heading">
+                <div>
+                  <p className="card-eyebrow">Resume tailoring</p>
+                  <h3>Review suggested changes</h3>
+                </div>
+                <span className="result-icon">↗</span>
+              </div>
               {tailoring.warnings.map((warning) => (
-                <p
-                  key={warning}
-                  className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
-                >
+                <p key={warning} className="warning-message">
                   {warning}
                 </p>
               ))}
-              <div className="mt-4 space-y-4">
+              <div className="suggestion-list">
                 {tailoring.changes.map((change, index) => (
                   <article
                     key={`${change.section}-${index}`}
-                    className="rounded-2xl border border-slate-200 p-4"
+                    className="suggestion-item"
                   >
-                    <p className="text-xs font-semibold uppercase text-indigo-700">
+                    <p className="suggestion-section">
                       {change.section}
-                      {change.supported_by_resume
-                        ? " · Supported by resume"
-                        : " · Review carefully"}
+                      <span className={change.supported_by_resume ? "fact-supported" : "fact-review"}>
+                        {change.supported_by_resume ? "Grounded in your resume" : "Review carefully"}
+                      </span>
                     </p>
-                    <p className="mt-3 text-sm text-slate-500">
-                      Original: {change.original_text}
+                    <p className="suggestion-original">
+                      <span>Current</span>{change.original_text}
                     </p>
-                    <p className="mt-2 text-sm font-medium">
-                      Suggested: {change.suggested_text}
+                    <p className="suggestion-proposed">
+                      <span>Suggested</span>{change.suggested_text}
                     </p>
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="suggestion-reason">
                       {change.reason}
                     </p>
+                    <div className="decision-row">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setChangeDecisions((current) => ({
+                            ...current,
+                            [index]: "accepted",
+                          }))
+                        }
+                        aria-pressed={changeDecisions[index] === "accepted"}
+                        className={`decision-button accept-button${changeDecisions[index] === "accepted" ? " is-selected" : ""}`}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setChangeDecisions((current) => ({
+                            ...current,
+                            [index]: "rejected",
+                          }))
+                        }
+                        aria-pressed={changeDecisions[index] === "rejected"}
+                        className={`decision-button reject-button${changeDecisions[index] === "rejected" ? " is-selected" : ""}`}
+                      >
+                        Reject
+                      </button>
+                      <span className="decision-status">
+                        {changeDecisions[index] ?? "Pending"}
+                      </span>
+                    </div>
                   </article>
                 ))}
                 {tailoring.changes.length === 0 && (
-                  <p className="text-sm text-slate-500">
-                    No text changes were suggested. Check the warnings above.
+                  <p className="insight-placeholder">
+                    No text changes were suggested. Check the notes above for more context.
                   </p>
                 )}
               </div>
+              <CitationsPanel citations={tailoring.citations} />
+              {acceptedChangeCount(tailoring, changeDecisions) > 0 && (
+                <p className="accepted-message">
+                  {acceptedChangeCount(tailoring, changeDecisions)} accepted
+                  change(s) will be included in the tailored DOCX. Pending and
+                  rejected suggestions will be left out.
+                </p>
+              )}
             </div>
           )}
 
           {coverLetter && (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="font-semibold">Cover letter draft</h2>
+            <div className="glass-card result-card">
+              <div className="result-card-heading">
+                <div>
+                  <p className="card-eyebrow">Personalized draft</p>
+                  <h3>Cover letter</h3>
+                </div>
+                <span className="result-icon">✎</span>
+              </div>
               {coverLetter.warnings.map((warning) => (
-                <p
-                  key={warning}
-                  className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
-                >
+                <p key={warning} className="warning-message">
                   {warning}
                 </p>
               ))}
-              <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+              <p className="cover-letter-draft">
                 {coverLetter.draft}
               </p>
-              <div className="mt-4 border-t border-slate-100 pt-4">
-                <p className="text-xs font-semibold text-slate-500">
-                  Resume facts referenced
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
+              <div className="facts-used">
+                <p>Resume facts referenced</p>
+                <div>
                   {coverLetter.resume_facts_used.map((fact) => (
-                    <span
-                      key={fact}
-                      className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600"
-                    >
+                    <span key={fact}>
                       {fact}
                     </span>
                   ))}
                 </div>
               </div>
+              <CitationsPanel citations={coverLetter.citations} />
             </div>
           )}
 
           {!score && !skillGap && (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-white/60 p-8 text-center">
-              <p className="text-4xl">✦</p>
-              <p className="mt-3 font-semibold">Your insights will appear here</p>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                We keep scores deterministic and use AI only where semantic
-                understanding is useful.
+            <div className="empty-state">
+              <div className="empty-orbit" aria-hidden="true"><span>✦</span></div>
+              <p className="card-eyebrow">Your next step, made clearer</p>
+              <h3>Your insights will appear here</h3>
+              <p>
+                Start with your resume and a job description. ResumeIQ will map
+                the match, surface opportunities, and keep its recommendations
+                grounded in your experience.
               </p>
             </div>
           )}
         </section>
       </div>
+      </div>
+      <footer className="page-footer">
+        <span>ResumeIQ</span>
+        <span>Thoughtful tools for your next career move.</span>
+      </footer>
     </main>
   );
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize),
+    );
+  }
+
+  return btoa(binary);
 }
 
 function ActionButton({
@@ -558,50 +822,158 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium transition hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+      className="action-button"
     >
-      {busy ? "Working..." : children}
+      {busy ? (
+        <>
+          <span className="loading-spinner" aria-hidden="true" />
+          Working...
+        </>
+      ) : (
+        <>
+          {children}
+          <span className="action-arrow" aria-hidden="true">→</span>
+        </>
+      )}
     </button>
   );
+}
+
+function acceptedChangeCount(
+  result: TailorResult | null,
+  decisions: Record<number, ChangeDecision>,
+): number {
+  return (
+    result?.changes.filter(
+      (_, index) => decisions[index] === "accepted",
+    ).length ?? 0
+  );
+}
+
+function applyAcceptedChanges(
+  source: ResumeData,
+  changes: TailoredChange[],
+): ResumeData {
+  const updated: ResumeData = structuredClone(source);
+
+  for (const change of changes) {
+    let applied = false;
+
+    if (change.section.toLowerCase() === "summary") {
+      if (updated.summary === change.original_text) {
+        updated.summary = change.suggested_text;
+        applied = true;
+      }
+    } else if (change.section.toLowerCase() === "experience") {
+      for (const item of updated.experience) {
+        const bulletIndex = item.bullets.indexOf(change.original_text);
+        if (bulletIndex !== -1) {
+          item.bullets[bulletIndex] = change.suggested_text;
+          applied = true;
+          break;
+        }
+      }
+    } else if (
+      ["project", "projects"].includes(change.section.toLowerCase())
+    ) {
+      for (const project of updated.projects) {
+        if (project.description === change.original_text) {
+          project.description = change.suggested_text;
+          applied = true;
+          break;
+        }
+
+        if (project.name === change.original_text) {
+          project.name = change.suggested_text;
+          applied = true;
+          break;
+        }
+
+        const bulletIndex = project.bullets.indexOf(change.original_text);
+        if (bulletIndex !== -1) {
+          project.bullets[bulletIndex] = change.suggested_text;
+          applied = true;
+          break;
+        }
+      }
+    }
+
+    if (!applied) {
+      throw new Error(
+        `Could not apply accepted ${change.section} change: the original text no longer matches the resume.`,
+      );
+    }
+  }
+
+  return updated;
 }
 
 function FeedbackPanel({
   title,
   items,
+  citations,
 }: {
   title: string;
   items: FeedbackItem[];
+  citations?: CitationItem[];
 }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="font-semibold">{title}</h2>
-      <div className="mt-4 space-y-3">
+    <div className="glass-card feedback-card">
+      <div className="result-card-heading">
+        <div>
+          <p className="card-eyebrow">Personalized feedback</p>
+          <h3>{title}</h3>
+        </div>
+      </div>
+      <div className="feedback-list">
         {items.map((item, index) => (
           <article
             key={`${item.section}-${index}`}
-            className="rounded-2xl bg-slate-50 p-4"
+            className="feedback-item"
           >
-            <p className="text-xs font-semibold uppercase text-indigo-700">
+            <p className="feedback-section">
               {item.section}
             </p>
-            <p className="mt-1 text-sm font-medium">{item.point}</p>
+            <p className="feedback-point">{item.point}</p>
             {item.evidence && (
-              <p className="mt-2 text-sm text-slate-500">
-                Evidence: {item.evidence}
+              <p className="feedback-detail">
+                <strong>Evidence</strong>{item.evidence}
               </p>
             )}
             {item.suggestion && (
-              <p className="mt-2 text-sm text-slate-700">
+              <p className="feedback-detail">
+                <strong>Suggestion</strong>
                 {item.suggestion}
               </p>
             )}
           </article>
         ))}
         {items.length === 0 && (
-          <p className="text-sm text-slate-500">No findings returned.</p>
+          <p className="insight-placeholder">No findings returned.</p>
         )}
       </div>
+      {citations && <CitationsPanel citations={citations} />}
     </div>
+  );
+}
+
+function CitationsPanel({ citations }: { citations: CitationItem[] }) {
+  if (citations.length === 0) {
+    return null;
+  }
+
+  return (
+    <details className="score-citations">
+      <summary>Grounded in {citations.length} knowledge source(s)</summary>
+      <div>
+        {citations.map((citation) => (
+          <p key={citation.rule_id}>
+            <strong>{citation.rule_id.replaceAll("_", " ")}</strong>
+            <span>{citation.note}</span>
+          </p>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -615,27 +987,27 @@ function SkillList({
   color: "emerald" | "rose" | "amber";
 }) {
   const styles = {
-    emerald: "bg-emerald-50 text-emerald-700",
-    rose: "bg-rose-50 text-rose-700",
-    amber: "bg-amber-50 text-amber-700",
+    emerald: "skill-positive",
+    rose: "skill-negative",
+    amber: "skill-neutral",
   };
 
   return (
     <div>
-      <p className="mb-2 text-sm font-semibold">{title}</p>
+      <p className="skill-list-title">{title}</p>
       {skills.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {skills.map((skill) => (
             <span
               key={skill}
-              className={`rounded-full px-3 py-1 text-xs font-medium ${styles[color]}`}
+              className={`skill-pill ${styles[color]}`}
             >
               {skill}
             </span>
           ))}
         </div>
       ) : (
-        <p className="text-sm text-slate-400">None detected</p>
+        <p className="insight-placeholder">None detected</p>
       )}
     </div>
   );

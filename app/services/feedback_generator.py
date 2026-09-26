@@ -11,7 +11,10 @@ from app.models.schemas import (
 from app.services.feedback_analyzer import (
     analyze_strengths_weaknesses,
 )
-from app.services.knowledge_retriever import retrieve_rule
+from app.services.knowledge_retriever import (
+    citations_for_context,
+    retrieve_context,
+)
 
 
 def generate_grounded_feedback(
@@ -25,10 +28,31 @@ def generate_grounded_feedback(
 
     deterministic_result = analyze_strengths_weaknesses(request)
     categories = _get_feedback_categories(deterministic_result)
-    retrieved_rules = [
-        retrieve_rule(category)
-        for category in categories
-    ]
+    retrieved_rules = []
+    seen_rule_ids: set[str] = set()
+    for category in categories:
+        findings = [
+            item
+            for item in (
+                deterministic_result.strengths
+                + deterministic_result.weaknesses
+            )
+            if item.section == category
+        ]
+        query = " ".join(
+            [
+                request.job_description.raw_text
+                if request.job_description
+                else "",
+                *(item.point for item in findings),
+                *(item.evidence or "" for item in findings),
+                *(item.suggestion or "" for item in findings),
+            ]
+        )
+        for rule in retrieve_context(query, [category], top_k=2):
+            if rule["rule_id"] not in seen_rule_ids:
+                retrieved_rules.append(rule)
+                seen_rule_ids.add(rule["rule_id"])
 
     api_key = os.getenv("GROQ_API_KEY")
 
@@ -87,12 +111,14 @@ def generate_grounded_feedback(
         ) from error
 
     try:
-        return _validate_feedback(parsed_data)
+        result = _validate_feedback(parsed_data)
     except ValidationError as error:
         raise ValueError(
             "Groq returned data that does not match the "
             "StrengthsWeaknessesResult schema."
         ) from error
+    result.citations = citations_for_context(retrieved_rules)
+    return result
 
 
 def _get_feedback_categories(

@@ -8,7 +8,10 @@ from app.models.schemas import (
     CoverLetterRequest,
     CoverLetterResult,
 )
-from app.services.knowledge_retriever import retrieve_rule
+from app.services.knowledge_retriever import (
+    citations_for_context,
+    retrieve_context,
+)
 from app.services.skill_gap_analysis import analyze_skill_gap
 
 
@@ -20,10 +23,21 @@ def generate_cover_letter(
     """
 
     skill_gap = analyze_skill_gap(request)
-    rules = [
-        retrieve_rule("cover_letter"),
-        retrieve_rule("keywords"),
-    ]
+    query = " ".join(
+        [
+            request.job_description.raw_text,
+            *request.job_description.required_skills,
+            *request.job_description.preferred_skills,
+            request.resume.summary or "",
+            *request.resume.skills,
+            *request.resume.certifications,
+        ]
+    )
+    rules = retrieve_context(
+        query,
+        ["cover_letter", "keywords"],
+        top_k=4,
+    )
 
     api_key = os.getenv("GROQ_API_KEY")
 
@@ -91,6 +105,7 @@ def generate_cover_letter(
         ) from error
 
     _validate_fact_references(result, request)
+    result.citations = citations_for_context(rules)
     return result
 
 

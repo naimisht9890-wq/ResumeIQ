@@ -1,3 +1,4 @@
+import json
 import re
 
 from app.services.skill_matching import (
@@ -5,6 +6,10 @@ from app.services.skill_matching import (
     normalize_text,
     resume_search_text,
     unique_canonical_skills,
+)
+from app.services.knowledge_retriever import (
+    citations_for_context,
+    retrieve_context,
 )
 
 from app.models.schemas import (
@@ -74,6 +79,43 @@ def calculate_ats_score(request: ATSScoreRequest) -> ATSScoreResult:
             note=(
                 "Overall score uses weights: format 20%, sections 20%, "
                 "keywords 25%, quantification 20%, readability 15%."
+            ),
+        )
+    )
+    resume_data = (
+        resume.model_dump(mode="json")
+        if hasattr(resume, "model_dump")
+        else resume.dict()
+    )
+    job_description = request.job_description
+    job_data = (
+        job_description.model_dump(mode="json")
+        if job_description is not None
+        and hasattr(job_description, "model_dump")
+        else job_description.dict()
+        if job_description is not None
+        else {}
+    )
+    retrieved_rules = retrieve_context(
+        json.dumps(
+            {"resume": resume_data, "job_description": job_data},
+            ensure_ascii=False,
+        ),
+        [
+            "formatting",
+            "section_completeness",
+            "keywords",
+            "quantification",
+            "readability",
+        ],
+        top_k=5,
+    )
+    citations.extend(
+        citations_for_context(
+            retrieved_rules,
+            note_prefix=(
+                "Related guidance only; the numeric score remains "
+                "deterministic and is not graded by this retrieval. "
             ),
         )
     )
