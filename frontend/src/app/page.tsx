@@ -103,6 +103,8 @@ type JobStatusResult = {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const JOB_TIMEOUT_MS = 180_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export default function Home() {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -119,6 +121,7 @@ export default function Home() {
   >({});
   const [coverLetter, setCoverLetter] = useState<CoverLetterResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [jobProgress, setJobProgress] = useState("");
   const [activeAction, setActiveAction] = useState("");
   const [error, setError] = useState("");
 
@@ -143,6 +146,7 @@ export default function Home() {
     }
 
     setIsAnalyzing(true);
+    setJobProgress("Starting resume and job-description analysis...");
     setError("");
     setScore(null);
     setSkillGap(null);
@@ -158,10 +162,10 @@ export default function Home() {
         runJob<ResumeData>("resume_parsing", {
           filename: resumeFile.name,
           content_base64: await fileToBase64(resumeFile),
-        }),
+        }, setJobProgress),
         runJob<JobData>("job_description_parsing", {
           text: jobDescription,
-        }),
+        }, setJobProgress),
       ]);
       setResumeData(resume);
       setJobData(structuredJob);
@@ -170,13 +174,15 @@ export default function Home() {
         job_description: structuredJob,
       };
       const [scoreResult, skillGapResult] = await Promise.all([
-        runJob<ScoreResult>("ats_scoring", analysisPayload),
-        runJob<SkillGapResult>("skill_gap_analysis", analysisPayload),
+        runJob<ScoreResult>("ats_scoring", analysisPayload, setJobProgress),
+        runJob<SkillGapResult>("skill_gap_analysis", analysisPayload, setJobProgress),
       ]);
 
       setScore(scoreResult);
       setSkillGap(skillGapResult);
+      setJobProgress("Analysis complete.");
     } catch (requestError) {
+      setJobProgress("");
       setError(
         requestError instanceof Error
           ? requestError.message
@@ -187,8 +193,13 @@ export default function Home() {
     }
   }
 
-  async function runJob<T>(operation: string, payload: unknown): Promise<T> {
-    const jobResponse = await fetch(`${API_BASE_URL}/v1/jobs`, {
+  async function runJob<T>(
+    operation: string,
+    payload: unknown,
+    onStatus?: (message: string) => void,
+  ): Promise<T> {
+    const deadline = Date.now() + JOB_TIMEOUT_MS;
+    const jobResponse = await fetchWithTimeout(`${API_BASE_URL}/v1/jobs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ operation, payload }),
@@ -200,8 +211,15 @@ export default function Home() {
 
     let job = (await jobResponse.json()) as JobStatusResult;
     while (job.status === "queued" || job.status === "running") {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Timed out waiting for ${operation.replaceAll("_", " ")}. ` +
+            "Check that the ResumeIQ API and job worker are running, then try again.",
+        );
+      }
+      onStatus?.(jobStatusMessage(operation, job.status));
       await new Promise((resolve) => window.setTimeout(resolve, 1000));
-      const statusResponse = await fetch(
+      const statusResponse = await fetchWithTimeout(
         `${API_BASE_URL}/v1/jobs/${encodeURIComponent(job.job_id)}`,
       );
 
@@ -219,6 +237,7 @@ export default function Home() {
       throw new Error(`The ${operation} job completed without a result.`);
     }
 
+    onStatus?.("");
     return job.result as T;
   }
 
@@ -231,6 +250,7 @@ export default function Home() {
     }
 
     setActiveAction(action);
+    setJobProgress("");
     setError("");
     try {
       const payload = {
@@ -240,18 +260,23 @@ export default function Home() {
 
       if (action === "feedback") {
         setFeedback(
-          await runJob<FeedbackResult>("strengths_weaknesses", payload),
+          await runJob<FeedbackResult>("strengths_weaknesses", payload, setJobProgress),
         );
       } else if (action === "tailoring") {
-        const result = await runJob<TailorResult>("tailoring", payload);
+        const result = await runJob<TailorResult>("tailoring", payload, setJobProgress);
         setTailoring(result);
         setChangeDecisions({});
       } else {
         setCoverLetter(
-          await runJob<CoverLetterResult>("cover_letter", payload),
+          await runJob<CoverLetterResult>(
+            "cover_letter",
+            payload,
+            setJobProgress,
+          ),
         );
       }
     } catch (requestError) {
+      setJobProgress("");
       setError(
         requestError instanceof Error
           ? requestError.message
@@ -259,6 +284,7 @@ export default function Home() {
       );
     } finally {
       setActiveAction("");
+      setJobProgress("");
     }
   }
 
@@ -470,6 +496,12 @@ export default function Home() {
                 </>
               )}
             </button>
+            {(isAnalyzing || jobProgress) && (
+              <p className="job-progress" role="status" aria-live="polite">
+                {isAnalyzing && <span className="loading-spinner" aria-hidden="true" />}
+                {jobProgress}
+              </p>
+            )}
             <p className="privacy-note">
               Resume text is processed for your analysis and AI-generated suggestions.
             </p>
@@ -804,6 +836,45 @@ async function fileToBase64(file: File): Promise<string> {
   }
 
   return btoa(binary);
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT_MS,
+  );
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        "The ResumeIQ API did not respond in time. Check that the API is running and try again.",
+      );
+    }
+    if (error instanceof TypeError) {
+      throw new Error(
+        `Could not reach the ResumeIQ API at ${API_BASE_URL}. Start the FastAPI service and check its CORS settings.`,
+      );
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function jobStatusMessage(
+  operation: string,
+  status: JobStatusResult["status"],
+): string {
+  const label = operation.replaceAll("_", " ");
+  return status === "queued"
+    ? `Waiting to start ${label}...`
+    : `Running ${label}...`;
 }
 
 function ActionButton({

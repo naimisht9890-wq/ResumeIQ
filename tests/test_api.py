@@ -2,6 +2,7 @@ import unittest
 from io import BytesIO
 import os
 import tempfile
+import time
 from unittest.mock import patch
 
 from docx import Document
@@ -250,6 +251,46 @@ class ResumeIQApiTests(unittest.TestCase):
         self.assertEqual(status_response.json()["operation"], "ats_scoring")
         self.assertIsNotNone(status_response.json()["result"])
         self.assertIn("overall", status_response.json()["result"])
+
+    def test_api_lifespan_runs_queued_jobs_without_separate_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = os.path.join(directory, "embedded-worker.sqlite3")
+            with patch.dict(
+                os.environ,
+                {
+                    "RESUMEIQ_DATABASE_PATH": database_path,
+                    "RESUMEIQ_WORKER_MODE": "embedded",
+                },
+            ):
+                with TestClient(app) as client:
+                    create_response = client.post(
+                        "/v1/jobs",
+                        json={
+                            "operation": "ats_scoring",
+                            "payload": {
+                                "resume": self.resume.model_dump(mode="json"),
+                                "job_description": (
+                                    self.job_description.model_dump(mode="json")
+                                ),
+                            },
+                        },
+                    )
+                    self.assertEqual(create_response.status_code, 202)
+                    job_id = create_response.json()["job_id"]
+                    deadline = time.monotonic() + 5
+                    job_status = None
+
+                    while time.monotonic() < deadline:
+                        status_response = client.get(f"/v1/jobs/{job_id}")
+                        self.assertEqual(status_response.status_code, 200)
+                        job_status = status_response.json()
+                        if job_status["status"] in {"completed", "failed"}:
+                            break
+                        time.sleep(0.05)
+
+        self.assertIsNotNone(job_status)
+        self.assertEqual(job_status["status"], "completed")
+        self.assertIn("overall", job_status["result"])
 
 
 if __name__ == "__main__":

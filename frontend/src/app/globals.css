@@ -551,6 +551,17 @@ summary {
   text-align: center;
 }
 
+.job-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: -10px 0 0;
+  color: #a9dccc;
+  font-size: 10px;
+  text-align: center;
+}
+
 .loading-spinner {
   width: 14px;
   height: 14px;

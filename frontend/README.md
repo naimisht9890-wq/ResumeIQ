@@ -7,23 +7,24 @@ Tailwind CSS. It connects to the FastAPI service in the repository root.
 
 1. Install the Python dependencies from the repository root and configure
    `GROQ_API_KEY` in the root `.env` file.
-2. In one terminal, start the API from the repository root:
+2. Start the API from the repository root:
 
    ```bash
    uvicorn app.main:app --reload
    ```
 
-3. In a second terminal, start the job worker from the repository root:
+   The API starts its SQLite-backed job worker automatically by default.
+   To run a separate worker process instead, set `RESUMEIQ_WORKER_MODE=external`
+   for the API and run this command in another terminal from the repository root:
 
    ```bash
    python -m app.worker
    ```
 
-   Keep one worker process running. The API queues parsing and analysis jobs;
-   the worker executes them and saves their results for the frontend to poll.
-   Use `python -m app.worker --once` to process at most one queued job and exit.
+   Keep one worker process running. Use `python -m app.worker --once` to
+   process at most one queued job and exit.
 
-4. Install frontend dependencies and start Next.js:
+3. Install frontend dependencies and start Next.js:
 
    ```bash
    cd frontend

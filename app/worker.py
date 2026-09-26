@@ -2,6 +2,7 @@ import argparse
 import base64
 import logging
 import time
+from threading import Event
 from typing import Any
 
 from app.models.schemas import (
@@ -134,6 +135,7 @@ def run_one_job() -> bool:
 def run_worker(
     poll_interval: float = 1.0,
     once: bool = False,
+    stop_event: Event | None = None,
 ) -> None:
     if poll_interval <= 0:
         raise ValueError("Worker polling interval must be positive.")
@@ -147,7 +149,7 @@ def run_worker(
         LOGGER.info("Removed %d expired job(s).", purged)
 
     next_cleanup = time.monotonic() + 24 * 60 * 60
-    while True:
+    while stop_event is None or not stop_event.is_set():
         did_work = run_one_job()
         if once:
             return
@@ -157,7 +159,10 @@ def run_worker(
                 LOGGER.info("Removed %d expired job(s).", purged)
             next_cleanup = time.monotonic() + 24 * 60 * 60
         if not did_work:
-            time.sleep(poll_interval)
+            if stop_event is None:
+                time.sleep(poll_interval)
+            else:
+                stop_event.wait(poll_interval)
 
 
 def main() -> None:
